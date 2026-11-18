@@ -77,3 +77,29 @@ __recovery/
 
 # Castalia statistics file (since XE7 Castalia is distributed with Delphi)
 *.stat
+
+# Project build outputs, dependencies and temporary files
+/build/
+/src/sdk-overlay/
+/src/vendor/
+/src/build-history/
+/dist/
+*.log
+*.tmp
+*.bak
+*.dproj.identcache
+*.obj
+*.exp
+MED.ini
+last-command.bin
+.DS_Store
+Thumbs.db
+*.pdb
+*.dproj.local
+*.groupproj.local
+*.err
+*-build-result.json
+__pycache__/
+.idea/
+.xcodemap/
+.vs/

@@ -1,0 +1,12 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ProjectGuid>{01F4DE83-E373-4428-B98C-9B6D1BC1F57A}</ProjectGuid>
+    <MainSource>ProcessAccessTests.dpr</MainSource><ProjectVersion>20.3</ProjectVersion>
+    <Base>True</Base><Config Condition="'$(Config)'==''">Release</Config>
+    <Platform Condition="'$(Platform)'==''">Win32</Platform><AppType>Console</AppType>
+    <DCC_ExeOutput>../../build/tests</DCC_ExeOutput><DCC_DcuOutput>../../build/dcu/ProcessAccessTests</DCC_DcuOutput>
+    <DCC_UnitSearchPath>../../src/med;../../src/shared;$(BDS)/lib/win32/release</DCC_UnitSearchPath>
+  </PropertyGroup>
+  <ItemGroup><DelphiCompile Include="$(MainSource)"><MainSource>MainSource</MainSource></DelphiCompile></ItemGroup>
+  <Import Project="$(BDS)/Bin/CodeGear.Delphi.Targets" />
+</Project>

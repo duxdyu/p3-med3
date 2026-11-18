@@ -1,0 +1,11 @@
+* text=auto
+*.pas text
+*.dpr text
+*.dproj text
+*.groupproj text
+*.dfm text
+*.md text eol=lf
+*.py text eol=lf
+*.res binary
+*.ico binary
+*.png binary

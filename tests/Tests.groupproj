@@ -1,0 +1,17 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup><ProjectGuid>{547D2C1E-29EC-42EB-B5F1-2BBF771347B7}</ProjectGuid></PropertyGroup>
+  <ItemGroup>
+    <Projects Include="med\MedProductionTests.dproj"><Dependencies/></Projects>
+    <Projects Include="med\MedMemoryTextTests.dproj"><Dependencies/></Projects>
+    <Projects Include="med\ProcessAccessTests.dproj"><Dependencies/></Projects>
+  </ItemGroup>
+  <ProjectExtensions>
+    <Borland.Personality>Default.Personality.12</Borland.Personality>
+    <Borland.ProjectType>GroupProjectType</Borland.ProjectType>
+  </ProjectExtensions>
+  <Target Name="MedProductionTests"><MSBuild Projects="med\MedProductionTests.dproj"/></Target>
+  <Target Name="MedMemoryTextTests"><MSBuild Projects="med\MedMemoryTextTests.dproj"/></Target>
+  <Target Name="ProcessAccessTests"><MSBuild Projects="med\ProcessAccessTests.dproj"/></Target>
+  <Target Name="Build"><CallTarget Targets="MedProductionTests;MedMemoryTextTests;ProcessAccessTests"/></Target>
+  <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>

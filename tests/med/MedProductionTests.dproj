@@ -1,0 +1,15 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ProjectGuid>{9D680D3F-4ECC-459D-A1A3-C68252A9920F}</ProjectGuid>
+    <MainSource>MedProductionTests.dpr</MainSource><ProjectVersion>20.3</ProjectVersion>
+    <Base>True</Base><Config Condition="'$(Config)'==''">Debug</Config>
+    <Platform Condition="'$(Platform)'==''">Win32</Platform><AppType>Console</AppType>
+    <DCC_ExeOutput>../../build/tests</DCC_ExeOutput>
+    <DCC_DcuOutput>../../build/dcu/MedProductionTests</DCC_DcuOutput>
+    <DCC_UnitSearchPath>../../src/med;../../src/shared;$(BDS)/lib/win32/release</DCC_UnitSearchPath>
+    <DCC_Define>MED_PRODUCTION_TESTS</DCC_Define>
+    <DCC_Namespace>System;System.Win;Winapi;Vcl;Vcl.Imaging;Vcl.Samples;Data;Xml;Bde</DCC_Namespace>
+  </PropertyGroup>
+  <ItemGroup><DelphiCompile Include="$(MainSource)"><MainSource>MainSource</MainSource></DelphiCompile></ItemGroup>
+  <Import Project="$(BDS)/Bin/CodeGear.Delphi.Targets" />
+</Project>

@@ -1,0 +1,15 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup><ProjectGuid>{21470398-DB65-457C-9B88-EB292BE490A2}</ProjectGuid></PropertyGroup>
+  <ItemGroup>
+    <Projects Include="src\med\MED3.dproj"><Dependencies/></Projects>
+    <Projects Include="src\med\P3MED.dproj"><Dependencies/></Projects>
+  </ItemGroup>
+  <ProjectExtensions>
+    <Borland.Personality>Default.Personality.12</Borland.Personality>
+    <Borland.ProjectType>GroupProjectType</Borland.ProjectType>
+  </ProjectExtensions>
+  <Target Name="MED3"><MSBuild Projects="src\med\MED3.dproj"/></Target>
+  <Target Name="P3MED"><MSBuild Projects="src\med\P3MED.dproj"/></Target>
+  <Target Name="Build"><CallTarget Targets="MED3;P3MED"/></Target>
+  <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>

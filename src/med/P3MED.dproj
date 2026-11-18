@@ -1,0 +1,19 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ProjectGuid>{E80BDC82-2EA2-47BA-B75B-C23382D06171}</ProjectGuid>
+    <MainSource>P3MED.dpr</MainSource><ProjectVersion>20.3</ProjectVersion>
+    <Base>True</Base><Config Condition="'$(Config)'==''">Debug</Config>
+    <Platform Condition="'$(Platform)'==''">Win32</Platform>
+    <AppType>Application</AppType><FrameworkType>VCL</FrameworkType>
+    <DCC_Namespace>System;System.Win;Winapi;Vcl;Vcl.Imaging;Vcl.Samples;Data;Xml;Bde</DCC_Namespace>
+    <DCC_ExeOutput>../../build/P3Med3</DCC_ExeOutput>
+    <DCC_DcuOutput>../../build/dcu/P3MED</DCC_DcuOutput>
+    <DCC_UnitSearchPath>$(BDS)/lib/win32/release</DCC_UnitSearchPath>
+    <DCC_MapFile>3</DCC_MapFile><DCC_DebugInformation>1</DCC_DebugInformation>
+    <DCC_Optimize>false</DCC_Optimize><DCC_GenerateStackFrames>true</DCC_GenerateStackFrames>
+    <DCC_UsePackage></DCC_UsePackage>
+    <DCC_CodePage>65001</DCC_CodePage>
+  </PropertyGroup>
+  <ItemGroup><DelphiCompile Include="$(MainSource)"><MainSource>MainSource</MainSource></DelphiCompile></ItemGroup>
+  <Import Project="$(BDS)/Bin/CodeGear.Delphi.Targets" />
+</Project>
