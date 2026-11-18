@@ -6,7 +6,7 @@
     <Platform Condition="'$(Platform)'==''">Win32</Platform>
     <AppType>Library</AppType><FrameworkType>VCL</FrameworkType>
     <DCC_Namespace>System;System.Win;Winapi;Vcl;Vcl.Imaging;Vcl.Samples;Data;Xml;Bde</DCC_Namespace>
-    <DCC_ExeOutput>../../build/P3Med3</DCC_ExeOutput>
+    <DCC_ExeOutput>../../build/compiled/p3-med3</DCC_ExeOutput>
     <DCC_DcuOutput>../../build/dcu/MED3</DCC_DcuOutput>
     <DCC_UnitSearchPath>../shared;$(BDS)/lib/win32/release</DCC_UnitSearchPath>
     <DCC_MapFile>3</DCC_MapFile><DCC_DebugInformation>1</DCC_DebugInformation>

@@ -91,6 +91,7 @@ __recovery/
 *.obj
 *.exp
 MED.ini
+!/runtime/MED.ini
 last-command.bin
 .DS_Store
 Thumbs.db

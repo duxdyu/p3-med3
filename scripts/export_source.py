@@ -7,11 +7,12 @@ def source_files():
     roots=["README.md","INSTALL.md","BUILDING.md","CHANGELOG.md","LICENSE",
            "LICENSE-STATUS.md","THIRD_PARTY_NOTICES.md",".gitignore",".gitattributes",
            "MED.groupproj","scripts/build.py","scripts/prepare_dependencies.py",
-           "scripts/build_ide.py","scripts/export_source.py","scripts/README.md"]
+           "scripts/build_ide.py","scripts/package_runtime.py","scripts/export_source.py","scripts/README.md",
+           "runtime/MED.ini","runtime/README.md"]
     files=[ROOT/p for p in roots]
     for directory,extensions in [
         ("src/med",{".pas",".dfm",".dpr",".dproj",".res",".ico"}),
-        ("src/shared",{".pas"}),("tests",{".pas",".dfm",".dpr",".dproj",".groupproj",".res",".ico",".md"}),
+         ("src/shared",{".pas"}),("tests",{".pas",".dfm",".dpr",".dproj",".groupproj",".res",".ico",".md",".py"}),
         ("docs",{".md"}),("dependencies",{".md"})]:
         for p in (ROOT/directory).rglob("*"):
             if any(x in {"__history","__recovery","__pycache__"} for x in p.relative_to(ROOT).parts):continue

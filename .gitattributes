@@ -9,3 +9,4 @@
 *.res binary
 *.ico binary
 *.png binary
+/runtime/MED.ini -text

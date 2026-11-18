@@ -61,7 +61,9 @@ Patrician III/
 1. 从有权使用的本机Delphi SDK准备XP兼容的 `Winapi.UIAutomation.pas` 副本，见 [dependencies/README.md](dependencies/README.md)。可以手动准备，**不强制使用Python**。
 2. 在Delphi 13打开根目录 **`MED.groupproj`**。
 3. 确认目标为 **Win32**，选择 **Build All**；不要用F9运行DLL工程。
-4. 产品输出到 **`build/P3Med3/`**：`MED3.dll`、`P3MED.exe`。按上面的安装方式使用。
+4. IDE原始产品输出到 **`build/compiled/p3-med3/`**：`MED3.dll`、`P3MED.exe`。手动部署时另复制`runtime/MED.ini`；已有个人配置应保留。
+
+使用`python -B scripts/build.py app --bds "Delphi安装目录"`可自动编译并组装完整的 **`build/p3-med3/`**，包含上述两个产品和随仓库提供的`MED.ini`。输出目录不含编译辅助文件，无需从现有发布包补文件。详见[构建说明](BUILDING.md)与[配置来源](runtime/README.md)。
 
 编译工作由Delphi完成，包括Pascal中的内联x86汇编；没有C/C++构建链、代码转换器、从旧DLL提取代码或构建后补丁步骤。SDK准备与可选自动化脚本不参与游戏运行。
 

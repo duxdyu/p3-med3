@@ -15,7 +15,7 @@ python scripts/export_source.py --output build/github-source
 - `build/github-source.zip`：同内容源码包；
 - `build/github-source.manifest.json`：逐文件SHA256。
 
-输出位置必须尚不存在。脚本不会执行`git init`、提交、推送或覆盖任何已有发布包；不包含SDK、编译产物、本机配置、个人MED.ini、游戏或存档。
+输出位置必须尚不存在。脚本不会执行`git init`、提交、推送或覆盖任何已有发布包；不包含SDK、编译产物、本机配置、个人MED.ini、游戏或存档。仅包含明确提供的配置基线`runtime/MED.ini`及其来源说明，支持新克隆和源码导出后的完整运行目录组装。
 
 若不使用Python，按以下文件范围复制：
 
