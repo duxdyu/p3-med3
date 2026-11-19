@@ -11,7 +11,7 @@ type
     Grid: TStringGrid;
     Items: TMedCityEvents;
     Menu: TPopupMenu;
-    RemoveItem, DetailItem: TMenuItem;
+    RemoveItem, DetailItem, ClearDomainItem: TMenuItem;
     Selected: Integer;
     ReadOK: Boolean;
     Interacting: Boolean;
@@ -24,6 +24,9 @@ type
     procedure Tick(Sender: TObject);
     function RowItems(City: Integer): TArray<Integer>;
     function FireCount(City: Integer): Integer;
+    function DiseaseCount(City: Integer): Integer;
+    function GroupCount(const E: TMedCityEvent): Integer;
+    procedure GroupState(const E: TMedCityEvent; out Active,Future,Unknown: Boolean);
     function Describe(Index: Integer): string;
     procedure MouseDown(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X,Y: Integer);
@@ -31,6 +34,7 @@ type
       Shift: TShiftState; X,Y: Integer);
     procedure Details(Sender: TObject);
     procedure Remove(Sender: TObject);
+    procedure ClearDomain(Sender: TObject);
     function Hit(X,Y: Integer; out OverflowCity: Integer): Integer;
   public
     constructor CreateFor(Owner: TComponent; AGrid: TStringGrid);
@@ -50,6 +54,8 @@ begin
   DetailItem.OnClick:=Details; Menu.Items.Add(DetailItem);
   RemoveItem:=TMenuItem.Create(Menu); RemoveItem.Caption:='删除 / 清除这个事件';
   RemoveItem.OnClick:=Remove; Menu.Items.Add(RemoveItem);
+  ClearDomainItem:=TMenuItem.Create(Menu); ClearDomainItem.OnClick:=ClearDomain;
+  ClearDomainItem.Visible:=False; Menu.Items.Add(ClearDomainItem);
   Grid.OnMouseDown:=MouseDown; Grid.OnMouseUp:=MouseUp;
   // Viewing an event never clears the old whole-city status byte.
   Grid.OnDblClick:=nil;
@@ -90,20 +96,39 @@ begin
 end;
 
 function TMedCityEventView.RowItems(City: Integer): TArray<Integer>;
-var I,N: Integer; HasActiveFire: Boolean;
+var I,J,N: Integer;
 begin
-  Result:=nil; HasActiveFire:=False;
+  Result:=nil;
   for I:=0 to High(Items) do if Items[I].City=City then
   begin
-    // Only presentation is grouped. Keep every native record for details and
-    // identity checks; future warnings retain their hourglass and schedule.
-    if (Items[I].Kind=ceFire) and not Items[I].Pending then
-    begin
-      if HasActiveFire then Continue;
-      HasActiveFire:=True;
-    end;
+    if Items[I].Resolving then Continue;
+    if Items[I].Kind in [ceBlockade,ceBoycott,ceNavalAttack] then Continue;
+    J:=0;
+    while (J<Length(Result)) and (Items[Result[J]].Kind<>Items[I].Kind) do Inc(J);
+    if J<Length(Result) then Continue;
     N:=Length(Result); SetLength(Result,N+1); Result[N]:=I;
   end;
+end;
+
+function TMedCityEventView.GroupCount(const E: TMedCityEvent): Integer;
+var I: Integer;
+begin
+  Result:=0;
+  for I:=0 to High(Items) do
+    if (Items[I].City=E.City) and (Items[I].Kind=E.Kind) and not Items[I].Resolving then Inc(Result);
+end;
+
+procedure TMedCityEventView.GroupState(const E: TMedCityEvent; out Active,Future,Unknown: Boolean);
+var I: Integer;
+begin
+  Active:=False; Future:=False; Unknown:=False;
+  for I:=0 to High(Items) do
+    if (Items[I].City=E.City) and (Items[I].Kind=E.Kind) and not Items[I].Resolving then
+    begin
+      Active:=Active or Items[I].EffectPresent or (not Items[I].Pending and not Items[I].Uncertain);
+      Future:=Future or (Items[I].Pending and not Items[I].Uncertain);
+      Unknown:=Unknown or Items[I].Uncertain;
+    end;
 end;
 
 function TMedCityEventView.FireCount(City: Integer): Integer;
@@ -115,10 +140,19 @@ begin
       not Items[I].Pending then Inc(Result);
 end;
 
+function TMedCityEventView.DiseaseCount(City: Integer): Integer;
+var I: Integer;
+begin
+  Result:=0;
+  for I:=0 to High(Items) do
+    if (Items[I].City=City) and (Items[I].Kind=ceDisease) then Inc(Result);
+end;
+
 procedure TMedCityEventView.Draw(ARow: Integer; Rect: TRect; State: TGridDrawState);
-const Icons: array[TMedCityEventKind] of Integer=(37,31,29,0,0,32);
-var Row: TArray<Integer>; I,Count,X,Y: Integer; B: BLENDFUNCTION;
+const Icons: array[TMedCityEventKind] of Integer=(37,31,29,0,0,32,34,33,36);
+var Row: TArray<Integer>; I,Count,X,Y,MarkerX: Integer; B: BLENDFUNCTION;
     E: TMedCityEvent; C: TCanvas; R: TRect; Badge: string; BadgeWidth: Integer;
+    Active,Future,Unknown: Boolean;
 begin
   if ARow<1 then Exit;
   C:=Grid.Canvas;
@@ -136,7 +170,9 @@ begin
   begin
     if I>=Count then Break;
     X:=Rect.Left+2+I*24; E:=Items[Row[I]];
-    if E.Pending and not E.Uncertain then
+    GroupState(E,Active,Future,Unknown);
+    MarkerX:=X+11;
+    if not Active and Future and not Unknown then
     begin
       B.BlendOp:=AC_SRC_OVER; B.BlendFlags:=0;
       B.SourceConstantAlpha:=128; B.AlphaFormat:=0;
@@ -149,10 +185,10 @@ begin
       if E.Kind=ceGoodHarvest then begin C.Font.Color:=clLime; C.TextOut(X+10,Y+2,'+'); end
       else begin C.Font.Color:=clRed; C.TextOut(X+10,Y+2,'-'); end;
       C.Font.Assign(Grid.Font);
-    end
-    else if (E.Kind=ceFire) and not E.Pending then
+    end;
+    if Active and (E.Kind<>ceSiege) then
     begin
-      Badge:=IntToStr(FireCount(E.City));
+      Badge:=IntToStr(GroupCount(E));
       C.Font.Name:='Tahoma'; C.Font.Height:=-10; C.Font.Style:=[fsBold];
       BadgeWidth:=C.TextWidth(Badge)+2;
       if BadgeWidth<9 then BadgeWidth:=9;
@@ -164,19 +200,19 @@ begin
         DT_RIGHT or DT_VCENTER or DT_SINGLELINE or DT_NOPREFIX);
       C.Font.Assign(Grid.Font);
     end;
-    if E.Uncertain then
+    if Unknown and not Active then
     begin
-      C.Font.Color:=clGrayText; C.TextOut(X+11,Y+8,'?'); C.Font.Assign(Grid.Font);
+      C.Font.Color:=clGrayText; C.TextOut(MarkerX,Y+8,'?'); C.Font.Assign(Grid.Font);
     end
-    else if E.Pending then
+    else if Future and not Active then
     begin
       // Opaque hourglass, independent of the icon's 50% opacity.
-      C.Brush.Color:=$E7FFFF; R:=Types.Rect(X+11,Y+10,X+20,Y+20); C.FillRect(R);
+      C.Brush.Color:=$E7FFFF; R:=Types.Rect(MarkerX,Y+10,MarkerX+9,Y+20); C.FillRect(R);
       C.Pen.Color:=$006090; C.Pen.Width:=1;
-      C.MoveTo(X+12,Y+11); C.LineTo(X+19,Y+11);
-      C.MoveTo(X+12,Y+19); C.LineTo(X+19,Y+19);
-      C.MoveTo(X+13,Y+12); C.LineTo(X+18,Y+18);
-      C.MoveTo(X+18,Y+12); C.LineTo(X+13,Y+18);
+      C.MoveTo(MarkerX+1,Y+11); C.LineTo(MarkerX+8,Y+11);
+      C.MoveTo(MarkerX+1,Y+19); C.LineTo(MarkerX+8,Y+19);
+      C.MoveTo(MarkerX+2,Y+12); C.LineTo(MarkerX+7,Y+18);
+      C.MoveTo(MarkerX+7,Y+12); C.LineTo(MarkerX+2,Y+18);
     end;
   end;
   if Length(Row)>Count then
@@ -195,11 +231,39 @@ begin
   E:=Items[Index]; Now:=MedNow;
   if E.Kind=ceSiege then Exit(Wars[E.City].Detail);
   Result:=CityName[E.City]+' · '+MedCityEventName(E.Kind)+sLineBreak;
+  if E.Kind=ceDisease then
+  begin
+    Result:=Result+'本城共有'+IntToStr(DiseaseCount(E.City))+'条瘟疫记录。'+sLineBreak;
+    for I:=0 to High(Items) do if (Items[I].Kind=ceDisease) and (Items[I].City=E.City) then
+    begin
+      Result:=Result+'实例 '+IntToStr(Items[I].Event.Index)+'：';
+      if Items[I].Uncertain then Result:=Result+'启动阶段尚未确认'
+      else if Items[I].Pending then Result:=Result+'预约 '+Time_To_String(Items[I].StartTime)
+      else Result:=Result+'已开始';
+      Result:=Result+'；原生结束阈值 '+Time_To_String(Items[I].EndTime)+sLineBreak;
+    end;
+    Exit;
+  end;
+  if E.ReadOnlyEvent then
+  begin
+    if E.EffectPresent then Result:=Result+'正在发生。'
+    else if E.Uncertain then Result:=Result+'相关行动存在，当前阶段尚未确定。'
+    else Result:=Result+'已存在原生行动记录；下次阶段处理：'+Time_To_String(E.StartTime)+
+      '。这不是保证封锁到达或结束的日期。';
+    if E.Kind=ceBlockade then Result:=Result+sLineBreak+'封锁行动也可能伴随抵制效果，期限受原生条件影响。';
+    if E.Kind=ceNavalAttack then Result:=Result+sLineBreak+'已确认港口海战状态；仅凭此标签不能确认攻击方一定是海盗。';
+    Result:=Result+sLineBreak+'只读状态，不提供删除或强制结束。'; Exit;
+  end;
   if E.Uncertain then
-    Result:=Result+'处于启动或收尾边界，尚不能确认本实例是否开始传播；请推进少量游戏时间后刷新。'
+    Result:=Result+'火势暂未确定，请推进少量游戏时间等待刷新'
   else if E.Pending then
     Result:=Result+'即将发生：'+MedRemaining(E.StartTime,Now)+sLineBreak+
       '排定日期：'+Time_To_String(E.StartTime)
+  else if E.Resolving then
+    Result:=Result+'效果已结束，原生通知仍在收尾。'
+  else if E.Kind=ceDisease then
+    Result:=Result+'瘟疫实例已开始；原生结束阈值：'+Time_To_String(E.EndTime)+sLineBreak+
+      '停止时刻由处理步长决定，阈值不是保证精确解除了疾病的时刻。'
   else if E.EndKnown then
     Result:=Result+'正在发生；距计划结束：'+MedRemaining(E.EndTime,Now)+sLineBreak+
       '计划结束：'+Time_To_String(E.EndTime)
@@ -219,8 +283,17 @@ begin
       end;
     Result:=Result+sLineBreak+'当前火势实例：'+IntToStr(FireCount(E.City))+
       '（不是燃烧建筑数）'+sLineBreak+'原生事件编号：'+IDs;
-    Result:=Result+sLineBreak+'清除将结束整组当前火势，已着火建筑按原生结束流程处理；不恢复既有损失。';
   end else Result:=Result+sLineBreak+'原生事件编号：'+IntToStr(E.Event.Index);
+  if E.Kind<>ceDisease then
+    for I:=0 to High(Items) do
+      if (I<>Index) and (Items[I].City=E.City) and (Items[I].Kind=E.Kind) then
+      begin
+        Result:=Result+sLineBreak+'实例 '+IntToStr(Items[I].Event.Index)+'：';
+        if Items[I].Uncertain then Result:=Result+'状态暂未确定'
+        else if Items[I].Pending then Result:=Result+'即将发生，'+Time_To_String(Items[I].StartTime)
+        else if Items[I].Resolving then Result:=Result+'已结束'
+        else Result:=Result+'正在发生';
+      end;
 end;
 
 function TMedCityEventView.Hit(X,Y: Integer; out OverflowCity: Integer): Integer;
@@ -241,20 +314,19 @@ end;
 
 procedure TMedCityEventView.MouseDown(Sender: TObject; Button: TMouseButton;
   Shift: TShiftState; X,Y: Integer);
-var Overflow: Integer;
+var Overflow: Integer; Active,Future,Unknown: Boolean;
 begin
   if Button<>mbRight then Exit;
   PopupWar:='';
   Selected:=Hit(X,Y,Overflow);
   if Selected<0 then Exit;
-  RemoveItem.Enabled:=(Items[Selected].Kind<>ceSiege) and not Items[Selected].Uncertain;
-  if Items[Selected].Kind=ceSiege then
-    RemoveItem.Caption:='战争事件不支持强制清除'
-  else if (Items[Selected].Kind=ceFire) and not Items[Selected].Pending then
-    RemoveItem.Caption:='清除当前火势（'+IntToStr(FireCount(Items[Selected].City))+'个实例）'
-  else if Items[Selected].Uncertain then RemoveItem.Caption:='状态待确认，请刷新'
-  else if Items[Selected].Pending then RemoveItem.Caption:='删除：取消这个未发生事件'
-  else RemoveItem.Caption:='清除：结束这个当前事件';
+  GroupState(Items[Selected],Active,Future,Unknown);
+  RemoveItem.Caption:='删除事件';
+  ClearDomainItem.Caption:='删除未来事件';
+  RemoveItem.Visible:=(Active or Unknown) and not Items[Selected].ReadOnlyEvent and (Items[Selected].Kind<>ceSiege);
+  RemoveItem.Enabled:=Active or (Items[Selected].Kind in [ceDisease,ceFire]);
+  ClearDomainItem.Visible:=Future and not Items[Selected].ReadOnlyEvent and (Items[Selected].Kind<>ceSiege);
+  ClearDomainItem.Enabled:=Future;
 end;
 
 procedure TMedCityEventView.MouseUp(Sender: TObject; Button: TMouseButton;
@@ -267,6 +339,7 @@ begin
   Grid.MouseToCell(X,Y,Col,Row);
   if (Col=10) and (Row>0) and (Row<=Length(Wars)) then
   begin
+    if not Wars[Row-1].ShowIcon then Exit;
     Interacting:=True;
     try ShowMessage(Wars[Row-1].Detail); finally Interacting:=False; end;
     Exit;
@@ -309,8 +382,9 @@ begin
     Items:=PopupItems;
     try
       for I:=0 to High(Items) do
-        if (Items[I].Event.Pool=PopupEvent.Event.Pool) and
-          (Items[I].Event.Index=PopupEvent.Event.Index) then
+         if (Items[I].Event.Pool=PopupEvent.Event.Pool) and
+           (Items[I].Event.Index=PopupEvent.Event.Index) and
+           (Items[I].Kind=PopupEvent.Kind) and (Items[I].City=PopupEvent.City) then
         begin ShowMessage(Describe(I)); Break; end;
     finally Items:=Saved; Selected:=Index; end;
   end
@@ -323,11 +397,20 @@ var Error: string;
 begin
   if not PopupValid then Exit;
   PopupValid:=False;
-  if (PopupEvent.Kind=ceFire) and not PopupEvent.Pending then
+  if PopupEvent.Kind=ceFire then
   begin
-    if not MedClearFireGroup(PopupEvent,PopupItems,Error) then ShowMessage(Error);
+    if not MedClearFireGroup(PopupEvent,PopupItems,Error,True) then ShowMessage(Error);
   end
-  else if not MedDeleteCityEvent(PopupEvent,Error) then ShowMessage(Error);
+  else if not MedClearCityDomain(PopupEvent,PopupItems,Error) then ShowMessage(Error);
+  Refresh; Grid.Invalidate;
+end;
+
+procedure TMedCityEventView.ClearDomain(Sender: TObject);
+var Error: string;
+begin
+  if not PopupValid then Exit;
+  PopupValid:=False;
+  if not MedDeleteFutureGroup(PopupEvent,PopupItems,Error) then ShowMessage(Error);
   Refresh; Grid.Invalidate;
 end;
 

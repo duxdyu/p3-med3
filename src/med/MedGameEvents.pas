@@ -16,13 +16,16 @@ type
     Value: TMedEventRecord;
   end;
   TMedEvents = array of TMedEvent;
-  TMedCityEventKind = (ceFire, ceDisease, ceFrozen, cePoorHarvest, ceGoodHarvest, ceSiege);
+  TMedCityEventKind = (ceFire, ceDisease, ceFrozen, cePoorHarvest, ceGoodHarvest,
+    ceSiege, ceBlockade, ceBoycott, ceNavalAttack);
   TMedCityEvent = record
     Event: TMedEvent;
     City: Byte;
     Kind: TMedCityEventKind;
     Pending: Boolean;
     Uncertain: Boolean;
+    Resolving: Boolean;
+    EffectPresent,ReadOnlyEvent: Boolean;
     StartTime, EndTime: Cardinal;
     EndKnown: Boolean;
   end;
@@ -40,6 +43,10 @@ function MedGrantLoan(City, Slot, Tier: Integer; const Expected: TMedLoanDemand;
   out Error: string): Boolean;
 function MedDeleteCityEvent(const Item: TMedCityEvent; out Error: string): Boolean;
 function MedClearFireGroup(const Selected: TMedCityEvent;
+  const Expected: TMedCityEvents; out Error: string; IncludeFuture: Boolean=False): Boolean;
+function MedClearCityDomain(const Selected: TMedCityEvent;
+  const Expected: TMedCityEvents; out Error: string): Boolean;
+function MedDeleteFutureGroup(const Selected: TMedCityEvent;
   const Expected: TMedCityEvents; out Error: string): Boolean;
 function MedCityEventName(Kind: TMedCityEventKind): string;
 function MedRemaining(Time, Now: Cardinal): string;
@@ -53,6 +60,11 @@ type
     Pool, Busy: Cardinal;
     Head, FreeHead, Capacity, Padding: Word;
   end;
+var
+  PreviousDisease: TMedEvents;
+  DiseaseStarted: TArray<Boolean>;
+  DiseaseFirst: TArray<Cardinal>;
+  DiseaseBase,DiseaseNow: Cardinal;
 
 function MedRead(Address: Cardinal; var Value; Size: Cardinal): Boolean;
 var N: NativeUInt;
@@ -190,10 +202,18 @@ begin
 end;
 
 function MedScanCityEvents(out Items: TMedCityEvents): Boolean;
-var All: TMedEvents; I,N,Stage: Integer; E: TMedCityEvent; Flags,Now: Cardinal;
+var All,NextDisease: TMedEvents; I,J,N,Stage: Integer; E: TMedCityEvent; Flags,Now,Base: Cardinal;
+    NextStarted: TArray<Boolean>; NextFirst: TArray<Cardinal>;
+    Started,KnownFuture: Boolean; First: Cardinal;
+    StartDay,Today,Year: Word;
 begin
   Items:=nil; Result:=MedScanEvents(All); if not Result then Exit;
   Now:=MedNow;
+  Base:=U32($71CE10);
+  if (Base<>DiseaseBase) or (Now<DiseaseNow) then
+  begin PreviousDisease:=nil; DiseaseStarted:=nil; DiseaseFirst:=nil; end;
+  DiseaseBase:=Base; DiseaseNow:=Now;
+  NextDisease:=nil; NextStarted:=nil; NextFirst:=nil;
   for I:=0 to High(All) do
   begin
     E:=Default(TMedCityEvent); E.Event:=All[I]; Stage:=0;
@@ -208,13 +228,22 @@ begin
         E.City:=All[I].Value.Data[0]; E.EndTime:=All[I].Value.Time; E.EndKnown:=True; end;
       9: begin
         Stage:=PCardinal(@All[I].Value.Data[0])^;
-        if (Stage<0) or (Stage>2) then Continue; // Follow-up letters are not an active effect.
+        if (Stage<0) or (Stage>5) then Continue;
         if PWord(@All[I].Value.Data[8])^>=U32($71CDB8) then Continue;
         E.City:=All[I].Value.Data[8];
         if All[I].Value.Data[12]=0 then E.Kind:=cePoorHarvest else E.Kind:=ceGoodHarvest;
         E.StartTime:=All[I].Value.Time;
-        // Stage 2 points to effect end; earlier stages include season adjustments.
-        E.EndKnown:=Stage=2; E.EndTime:=All[I].Value.Time;
+        // phase names the NEXT native action: phase3 ends the active effect.
+        E.EndKnown:=Stage=3; E.EndTime:=All[I].Value.Time;
+        E.Resolving:=Stage>=4;
+      end;
+      $23,$24:begin
+        if All[I].Value.Kind=$24 then E.Kind:=ceBlockade else E.Kind:=ceBoycott;
+        E.City:=All[I].Value.Data[12]; Stage:=All[I].Value.Data[13];
+        if Stage>6 then Continue;
+        E.ReadOnlyEvent:=True; E.StartTime:=All[I].Value.Time;
+        // Stored phase is NEXT callback. Time is a stage time, not a final end.
+        E.Pending:=Stage<=1; E.Resolving:=Stage=5;
       end;
     else Continue;
     end;
@@ -225,20 +254,71 @@ begin
         Stage:=MedFirePhase(E.StartTime,All[I].Value.Time,Now,PWord(@All[I].Value.Data[4])^);
         E.Pending:=Stage<>1; E.Uncertain:=Stage=2;
       end;
-      ceDisease:E.Pending:=Flags and 8=0;
+      ceDisease:begin
+        E.EffectPresent:=Flags and 8<>0;
+        Started:=False; First:=0;
+        for J:=0 to High(PreviousDisease) do
+          if (PreviousDisease[J].Pool=All[I].Pool) and
+             (PreviousDisease[J].Index=All[I].Index) and
+             (PreviousDisease[J].Value.Kind=28) and
+             (PreviousDisease[J].Value.Data[14]=E.City) and
+             (PCardinal(@PreviousDisease[J].Value.Data[4])^=E.EndTime) and
+             CompareMem(@PreviousDisease[J].Value.Data[0],@All[I].Value.Data[0],4) and
+             CompareMem(@PreviousDisease[J].Value.Data[12],@All[I].Value.Data[12],4) then
+             begin
+               Started:=DiseaseStarted[J] or
+                 (All[I].Value.Time>PreviousDisease[J].Value.Time);
+               First:=DiseaseFirst[J];
+             end;
+        StartDay:=PWord(@All[I].Value.Data[12])^;
+        Today:=0; Year:=0; MedRead($71CDAC,Today,2); MedRead($71CDAA,Year,2);
+        KnownFuture:=((First<>0) and (All[I].Value.Time=First) and (First>Now)) or
+          ((StartDay>Today) and
+          (UInt64(Year)*365+StartDay<=$FFFFFF) and
+          (All[I].Value.Time=(Cardinal(Year)*365+StartDay)*256) and
+          (All[I].Value.Time>Now));
+        E.Pending:=not Started;
+        E.Uncertain:=not Started and not KnownFuture;
+        if KnownFuture then First:=All[I].Value.Time;
+        E.StartTime:=First;
+        N:=Length(NextDisease); SetLength(NextDisease,N+1); SetLength(NextStarted,N+1); SetLength(NextFirst,N+1);
+        NextDisease[N]:=All[I]; NextStarted[N]:=Started; NextFirst[N]:=First;
+      end;
       ceFrozen:begin
-        if Flags and $4000000=0 then Continue;
+        E.Resolving:=Flags and $4000000=0;
         E.Pending:=False;
       end;
       cePoorHarvest,ceGoodHarvest:E.Pending:=Stage=0;
+      ceBlockade:begin
+        E.EffectPresent:=Flags and $200<>0;
+        E.Pending:=not E.EffectPresent;
+        E.Resolving:=False;
+        E.Uncertain:=not E.EffectPresent; // action phase time is not a confirmed port-arrival date
+      end;
+      ceBoycott:begin
+        E.EffectPresent:=Flags and $400<>0;
+        E.Pending:=not E.EffectPresent; E.Resolving:=False;
+        E.Uncertain:=not E.EffectPresent;
+      end;
     end;
+    N:=Length(Items); SetLength(Items,N+1); Items[N]:=E;
+  end;
+  PreviousDisease:=NextDisease; DiseaseStarted:=NextStarted; DiseaseFirst:=NextFirst;
+  // A port battle is a separate native object, not an event-pool record.
+  // The state proves a city naval attack, NOT necessarily pirate ownership.
+  for I:=0 to Integer(U32($71CDB8))-1 do
+  begin
+    Flags:=U32(Base+Cardinal(I)*$9F8+$2C8);
+    if Flags and $800=0 then Continue;
+    E:=Default(TMedCityEvent); E.City:=I; E.Kind:=ceNavalAttack;
+    E.ReadOnlyEvent:=True; E.EffectPresent:=True;
     N:=Length(Items); SetLength(Items,N+1); Items[N]:=E;
   end;
 end;
 
 function MedCityEventName(Kind: TMedCityEventKind): string;
 const Names: array[TMedCityEventKind] of string =
-   ('火灾','瘟疫','港口冻结','歉收天气','丰收天气','围城');
+   ('火灾','瘟疫','港口冻结','歉收天气','丰收天气','围城','港口封锁','联合抵制','港口遭攻击');
 begin Result:=Names[Kind]; end;
 
 function MedRemaining(Time, Now: Cardinal): string;
@@ -265,7 +345,7 @@ asm
 end;
 
 function MedClearFireGroup(const Selected: TMedCityEvent;
-  const Expected: TMedCityEvents; out Error: string): Boolean;
+  const Expected: TMedCityEvents; out Error: string; IncludeFuture: Boolean): Boolean;
 var Current: TMedCityEvents; All,After: TMedEvents; M: TManager;
     Targets,Active,FreeSeen,Burning,BuildingFree: array of Boolean;
     I,J,Count,ExpectedCount,Removed: Integer; Found: Boolean;
@@ -274,7 +354,7 @@ var Current: TMedCityEvents; All,After: TMedEvents; M: TManager;
     RecordBytes: array[0..7] of Byte;
 begin
   Result:=False; Error:='';
-  if (Selected.Kind<>ceFire) or Selected.Pending or Selected.Uncertain or
+  if (Selected.Kind<>ceFire) or ((Selected.Pending or Selected.Uncertain) and not IncludeFuture) or
     not MedEventLive(Selected.Event,Address) or not MedScanCityEvents(Current) or
     not MedScanEvents(All) or not MedRead($6DD480,M,SizeOf(M)) or (M.Busy<>0) then
   begin Error:='火势或游戏状态已变化，请刷新后再操作'; Exit; end;
@@ -284,12 +364,12 @@ begin
   for I:=0 to High(Current) do
     if (Current[I].Kind=ceFire) and (Current[I].City=Selected.City) then
     begin
-      if Current[I].Uncertain then
+      if Current[I].Uncertain and not IncludeFuture then
       begin Error:='同城有启动状态未确认的火灾，请推进少量游戏时间后刷新'; Exit; end;
-      if Current[I].Pending then Continue;
+      if Current[I].Pending and not IncludeFuture then Continue;
       Found:=False;
       for J:=0 to High(Expected) do
-        if (Expected[J].Kind=ceFire) and not Expected[J].Pending and
+        if (Expected[J].Kind=ceFire) and (IncludeFuture or not Expected[J].Pending) and
           (Expected[J].City=Selected.City) and
           (Expected[J].Event.Pool=Current[I].Event.Pool) and
           (Expected[J].Event.Index=Current[I].Event.Index) and
@@ -301,7 +381,7 @@ begin
       Targets[Current[I].Event.Index]:=True; Inc(Count);
     end;
   for I:=0 to High(Expected) do
-    if (Expected[I].Kind=ceFire) and not Expected[I].Pending and
+    if (Expected[I].Kind=ceFire) and (IncludeFuture or not Expected[I].Pending) and
       (Expected[I].City=Selected.City) then Inc(ExpectedCount);
   if (Count=0) or (Count<>ExpectedCount) then
   begin Error:='当前火势组数量已变化，请刷新'; Exit; end;
@@ -353,7 +433,12 @@ begin
   end;
   for I:=0 to High(Burning) do if Burning[I] then
     PByte(Buildings+Cardinal(I)*8+6)^:=0;
-  M.Head:=Word(Anchor); NativeResult:=NativeManagerCall(@M,$470CF4);
+  M.Head:=Word(Anchor);
+  // If only future records exist there is no shared effect to finish: cancel
+  // appointments without manufacturing a start/end notification.
+  if (PWord(CityAddress+$76A)^=$FFFF) and (PCardinal(CityAddress+$2C8)^ and $8000=0) then
+    NativeResult:=0
+  else NativeResult:=NativeManagerCall(@M,$470CF4);
   if (NativeResult<>0) or (PWord(CityAddress+$76A)^<>$FFFF) or
     (PCardinal(CityAddress+$2C8)^ and $8000<>0) then
   begin
@@ -418,29 +503,220 @@ begin
   Result:=True;
 end;
 
-function MedDeleteCityEvent(const Item: TMedCityEvent; out Error: string): Boolean;
-var Address,CityAddress,Buildings: Cardinal; M: TManager;
-    All: TMedEvents; I: Integer; Prev,Index,Next,Cap: Word;
-    R: ^TMedEventRecord; Link: PWord; Seen: array of Boolean;
+function MedClearCityDomain(const Selected: TMedCityEvent;
+  const Expected: TMedCityEvents; out Error: string): Boolean;
+var Current: TMedCityEvents; All,After: TMedEvents; M,Temp: TManager;
+    Targets,Seen: array of Boolean; I,J,Count,ExpectedCount,Removed: Integer;
+    Same,Matched: Boolean; CityAddress,OldFlags,Mask,Address: Cardinal;
+    Index,Next: Word; Link: PWord; R: ^TMedEventRecord;
+    function InDomain(const E: TMedCityEvent): Boolean;
+    begin
+      Result:=(E.City=Selected.City) and
+        (((Selected.Kind=ceDisease) and (E.Kind=ceDisease)) or
+         ((Selected.Kind=ceFrozen) and (E.Kind=ceFrozen)) or
+         ((Selected.Kind in [cePoorHarvest,ceGoodHarvest]) and
+          (E.Kind in [cePoorHarvest,ceGoodHarvest]) and not E.Pending));
+    end;
 begin
   Result:=False; Error:='';
-  if Item.Kind=ceSiege then
-  begin Error:='战争事件仅提供详情，不支持强制清除'; Exit; end;
+  if not (Selected.Kind in [ceDisease,ceFrozen,cePoorHarvest,ceGoodHarvest]) or
+    not MedEventLive(Selected.Event,Address) or not MedScanCityEvents(Current) or
+    not MedScanEvents(All) or not MedRead($6DD480,M,SizeOf(M)) or (M.Busy<>0) then
+  begin Error:='事件或游戏状态已变化，请刷新'; Exit; end;
+  SetLength(Targets,M.Capacity); SetLength(Seen,M.Capacity);
+  Count:=0; ExpectedCount:=0;
+  for I:=0 to High(Current) do if InDomain(Current[I]) then
+  begin
+    Matched:=False;
+    for J:=0 to High(Expected) do if InDomain(Expected[J]) and
+      (Current[I].Event.Pool=Expected[J].Event.Pool) and
+      (Current[I].Event.Index=Expected[J].Event.Index) and
+      (Current[I].Event.Value.Kind=Expected[J].Event.Value.Kind) and
+      (Current[I].Event.Value.Time=Expected[J].Event.Value.Time) and
+      CompareMem(@Current[I].Event.Value.Data,@Expected[J].Event.Value.Data,16) then Matched:=True;
+    if not Matched then begin Error:='同城事件集合已变化，请重新选择'; Exit; end;
+    Targets[Current[I].Event.Index]:=True; Inc(Count);
+  end;
+  for I:=0 to High(Expected) do if InDomain(Expected[I]) then Inc(ExpectedCount);
+  if (Count=0) or (Count<>ExpectedCount) then
+  begin Error:='同城事件数量已变化，请刷新'; Exit; end;
+  for I:=0 to High(All) do Seen[All[I].Index]:=True;
+  Index:=M.FreeHead;
+  while (Index<>$FFFF) and (Index<>M.Capacity) do
+  begin
+    if (Index>=M.Capacity) or Seen[Index] then
+    begin Error:='事件链核验失败，未执行操作'; Exit; end;
+    Seen[Index]:=True;
+    if not MedRead(M.Pool+Cardinal(Index)*24+4,Next,2) then
+    begin Error:='事件链读取失败，未执行操作'; Exit; end;
+    Index:=Next;
+  end;
+  CityAddress:=U32($71CE10)+Cardinal(Selected.City)*$9F8;
+  if not MedRead(CityAddress+$2C8,OldFlags,4) then
+  begin Error:='城市状态读取失败'; Exit; end;
+  case Selected.Kind of
+    ceDisease:begin
+      Mask:=8;
+      // Explicit ALL disease records, including appointments: no mortality tick.
+      PCardinal(CityAddress+$2C8)^:=OldFlags and not Mask;
+    end;
+    ceFrozen:begin
+      Mask:=$4000000;
+      if OldFlags and Mask<>0 then
+      begin Temp:=M; Temp.Head:=Selected.Event.Index; NativeManagerCall(@Temp,$470C34); end;
+    end;
+    else begin
+      Mask:=$6000;
+      for I:=0 to High(Current) do if InDomain(Current[I]) then
+      begin
+        R:=Pointer(M.Pool+Cardinal(Current[I].Event.Index)*24);
+        J:=PCardinal(@R.Data[0])^; PWord(@R.Data[10])^:=0;
+        if J in [1..3] then begin PCardinal(@R.Data[0])^:=3; NativeWeatherEnd(R); end;
+        if J in [2..4] then begin PCardinal(@R.Data[0])^:=4; NativeWeatherEnd(R); end;
+        if J in [3..5] then begin PCardinal(@R.Data[0])^:=5; NativeWeatherEnd(R); end;
+      end;
+    end;
+  end;
+  Link:=Pointer($6DD488); Removed:=0;
+  for I:=0 to High(All) do
+  begin
+    Index:=Link^; if Index=$FFFF then Break;
+    R:=Pointer(M.Pool+Cardinal(Index)*24); Next:=R.NextIndex;
+    if Targets[Index] then
+    begin Link^:=Next; R.NextIndex:=PWord($6DD48A)^; R.Kind:=$FFFF;
+      PWord($6DD48A)^:=Index; Inc(Removed); end
+    else Link:=@R.NextIndex;
+  end;
+  if (Removed<>Count) or (PCardinal(CityAddress+$2C8)^ and Mask<>0) or
+    ((PCardinal(CityAddress+$2C8)^ and not Mask)<>(OldFlags and not Mask)) or
+    not MedScanEvents(After) then
+  begin Error:='操作已执行但后置核验失败，请勿重复操作'; Exit; end;
+  for I:=0 to High(All) do if not Targets[All[I].Index] then
+  begin
+    Same:=False;
+    for J:=0 to High(After) do if (After[J].Index=All[I].Index) and
+      (After[J].Value.Kind=All[I].Value.Kind) and (After[J].Value.Time=All[I].Value.Time) and
+      CompareMem(@After[J].Value.Data,@All[I].Value.Data,16) then Same:=True;
+    if not Same then begin Error:='非目标事件核验失败，请勿重复操作'; Exit; end;
+  end;
+  FillChar(Seen[0],Length(Seen)*SizeOf(Boolean),0);
+  for I:=0 to High(After) do
+  begin
+    if Targets[After[I].Index] then
+    begin Error:='目标事件仍在活动链，请停止重复操作'; Exit; end;
+    Seen[After[I].Index]:=True;
+  end;
+  Index:=PWord($6DD48A)^; Removed:=0;
+  while (Index<>$FFFF) and (Index<>M.Capacity) do
+  begin
+    if (Index>=M.Capacity) or Seen[Index] then
+    begin Error:='事件回收链核验失败，请停止重复操作'; Exit; end;
+    Seen[Index]:=True; R:=Pointer(M.Pool+Cardinal(Index)*24);
+    if Targets[Index] then
+    begin
+      if R.Kind<>$FFFF then begin Error:='目标事件未完成释放'; Exit; end;
+      Inc(Removed);
+    end;
+    Index:=R.NextIndex;
+  end;
+  if Removed<>Count then begin Error:='事件回收数量不符'; Exit; end;
+  Result:=True;
+end;
+
+function MedDeleteFutureGroup(const Selected: TMedCityEvent;
+  const Expected: TMedCityEvents; out Error: string): Boolean;
+var Current: TMedCityEvents; I,J,N,ExpectedCount: Integer; Address: Cardinal;
+    Matched: Boolean; Targets: TMedCityEvents;
+begin
+  Result:=False; Error:=''; Targets:=nil;
+  if not MedScanCityEvents(Current) then
+  begin Error:='读取事件失败，请刷新'; Exit; end;
+  for I:=0 to High(Current) do
+    if (Current[I].Kind=Selected.Kind) and (Current[I].City=Selected.City) and
+      Current[I].Pending and not Current[I].Uncertain then
+    begin
+      Matched:=False;
+      for J:=0 to High(Expected) do
+        if (Expected[J].Kind=Selected.Kind) and (Expected[J].City=Selected.City) and
+          Expected[J].Pending and not Expected[J].Uncertain and
+          (Expected[J].Event.Pool=Current[I].Event.Pool) and
+          (Expected[J].Event.Index=Current[I].Event.Index) and
+          (Expected[J].Event.Value.Time=Current[I].Event.Value.Time) and
+          CompareMem(@Expected[J].Event.Value.Data,@Current[I].Event.Value.Data,16) then Matched:=True;
+      if not Matched then begin Error:='未来事件已变化，请刷新'; Exit; end;
+      N:=Length(Targets); SetLength(Targets,N+1); Targets[N]:=Current[I];
+    end;
+  ExpectedCount:=0;
+  for I:=0 to High(Expected) do if (Expected[I].Kind=Selected.Kind) and
+    (Expected[I].City=Selected.City) and Expected[I].Pending and not Expected[I].Uncertain then Inc(ExpectedCount);
+  if (Length(Targets)=0) or (Length(Targets)<>ExpectedCount) then
+  begin Error:='未来事件数量已变化，请刷新'; Exit; end;
+  for I:=0 to High(Targets) do
+    if not MedEventLive(Targets[I].Event,Address) then
+    begin Error:='未来事件已失效，请刷新'; Exit; end;
+  for I:=0 to High(Targets) do
+    if not MedDeleteCityEvent(Targets[I],Error) then
+    begin
+      if I>0 then Error:='部分未来事件已删除；'+Error;
+      Exit;
+    end;
+  Result:=True;
+end;
+
+function MedDeleteCityEvent(const Item: TMedCityEvent; out Error: string): Boolean;
+var Address,CityAddress,Buildings: Cardinal; M: TManager;
+    All,After: TMedEvents; I,J,WeatherStage: Integer; Prev,Index,Next,Cap: Word;
+    R: ^TMedEventRecord; Link: PWord; Seen: array of Boolean;
+    Matched: Boolean; OldFlags,ExpectedMask: Cardinal;
+begin
+  Result:=False; Error:='';
+  if Item.ReadOnlyEvent or (Item.Kind in [ceSiege,ceBlockade,ceBoycott,ceNavalAttack]) then
+  begin Error:='战争、封锁、抵制及港口攻击仅提供详情，不支持强制清除'; Exit; end;
   if Item.Uncertain then
   begin Error:='事件处于启动或收尾边界，请推进少量游戏时间后刷新'; Exit; end;
   if not MedEventLive(Item.Event,Address) then
   begin Error:='事件已变化，请刷新后再操作'; Exit; end;
-  if not MedScanEvents(All) then Exit;
+  if not MedScanEvents(All) then
+  begin Error:='读取事件链失败，未执行操作'; Exit; end;
+  if not MedRead($6DD480,M,SizeOf(M)) or (M.Busy<>0) then
+  begin Error:='事件管理器忙碌或读取失败，请稍后刷新'; Exit; end;
+  // Verify free-list membership before any mutation. Normal unused pool tail
+  // may be capacity; never treat an active slot as free.
+  SetLength(Seen,M.Capacity);
+  for I:=0 to High(All) do Seen[All[I].Index]:=True;
+  Index:=M.FreeHead;
+  while (Index<>$FFFF) and (Index<>M.Capacity) do
+  begin
+    if (Index>=M.Capacity) or Seen[Index] then
+    begin Error:='事件链校验失败，未执行操作'; Exit; end;
+    Seen[Index]:=True;
+    if not MedRead(M.Pool+Cardinal(Index)*24+4,Next,2) then
+    begin Error:='读取事件空闲链失败，未执行操作'; Exit; end;
+    Index:=Next;
+  end;
   // Fire/disease city flags and fire building chains are shared by simultaneous instances.
   if not Item.Pending then
     for I:=0 to High(All) do
       if (All[I].Index<>Item.Event.Index) and (All[I].Value.Kind=Item.Event.Value.Kind) and
         (((Item.Kind=ceFire) and (All[I].Value.Data[10]=Item.City)) or
          ((Item.Kind=ceDisease) and (All[I].Value.Data[14]=Item.City)) or
-         ((Item.Kind=ceFrozen) and (All[I].Value.Data[0]=Item.City))) then
+          ((Item.Kind=ceFrozen) and (PCardinal(@All[I].Value.Data[0])^=Item.City)) or
+          ((Item.Kind in [cePoorHarvest,ceGoodHarvest]) and
+           (PWord(@All[I].Value.Data[8])^=Item.City) and
+           (PCardinal(@All[I].Value.Data[0])^>0))) then
       begin Error:='此城同类事件存在多个实例，请先取消其他未发生实例后再清除当前状态'; Exit; end;
-  MedRead($6DD480,M,SizeOf(M)); M.Head:=Item.Event.Index;
+  M.Head:=Item.Event.Index;
   CityAddress:=U32($71CE10)+Cardinal(Item.City)*$9F8;
+  if not MedRead(CityAddress+$2C8,OldFlags,4) then
+  begin Error:='读取城市状态失败，未执行操作'; Exit; end;
+  ExpectedMask:=0;
+  if not Item.Pending then
+    case Item.Kind of
+      ceFire:ExpectedMask:=$8000;
+      ceDisease:ExpectedMask:=8;
+      ceFrozen:ExpectedMask:=$4000000;
+      cePoorHarvest,ceGoodHarvest:ExpectedMask:=$6000;
+    end;
   R:=Pointer(Address);
   if not Item.Pending then
     case Item.Kind of
@@ -468,8 +744,14 @@ begin
       end;
       ceFrozen:NativeManagerCall(@M,$470C34);
       cePoorHarvest,ceGoodHarvest:begin
-        PCardinal(@R.Data[0])^:=5; PWord(@R.Data[10])^:=0;
-        NativeWeatherEnd(R);
+        WeatherStage:=PCardinal(@R.Data[0])^;
+        PWord(@R.Data[10])^:=0; // Do not schedule a recurrence when ending.
+        if WeatherStage in [1..3] then
+        begin PCardinal(@R.Data[0])^:=3; NativeWeatherEnd(R); end;
+        if WeatherStage in [2..4] then
+        begin PCardinal(@R.Data[0])^:=4; NativeWeatherEnd(R); end;
+        if WeatherStage in [3..5] then
+        begin PCardinal(@R.Data[0])^:=5; NativeWeatherEnd(R); end;
       end;
     end;
   // Unlink exactly this known simple event, returning it to the native free pool.
@@ -485,6 +767,20 @@ begin
   Next:=R.NextIndex; Link^:=Next;
   R.Kind:=$FFFF; R.NextIndex:=PWord($6DD48A)^;
   PWord($6DD48A)^:=Item.Event.Index;
+  if (PCardinal(CityAddress+$2C8)^ and ExpectedMask<>0) or
+     ((PCardinal(CityAddress+$2C8)^ and not ExpectedMask)<>(OldFlags and not ExpectedMask)) or
+     not MedScanEvents(After) then
+  begin Error:='原生操作已执行，但状态核验未通过；请停止重复操作'; Exit; end;
+  for I:=0 to High(All) do if All[I].Index<>Item.Event.Index then
+  begin
+    Matched:=False;
+    for J:=0 to High(After) do
+      if (All[I].Index=After[J].Index) and (All[I].Value.Kind=After[J].Value.Kind) and
+         (All[I].Value.Time=After[J].Value.Time) and
+         CompareMem(@All[I].Value.Data,@After[J].Value.Data,16) then Matched:=True;
+    if not Matched then
+    begin Error:='操作后非目标事件核验失败；请停止重复操作'; Exit; end;
+  end;
   Result:=True;
 end;
 
