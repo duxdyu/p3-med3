@@ -14,7 +14,7 @@
 2. 打开根目录`MED.groupproj`。项目组应只有`MED3`和`P3MED`两个产品工程。
 3. 平台选择Win32。保留工程当前默认编译选项，选择Build All。
 4. 获取`build/compiled/p3-med3/MED3.dll`和`build/compiled/p3-med3/P3MED.exe`。
-5. 手动部署时复制两个产品和`runtime/MED.ini`到同一运行目录，不需要修改二进制文件。已有个人配置应保留。按[安装说明](INSTALL.md)使用。
+5. 手动部署时只复制两个产品到同一运行目录。无需预置`MED.ini`，缺失时使用默认值，首次保存设置时自动创建；已有个人配置应保留。按[安装说明](INSTALL.md)使用。
 
 当前dproj沿用已验证的诊断友好配置：默认Debug、保留栈帧、未启用优化，使用SDK release库。不要把默认配置名称写成已经验证过的Release优化构建。普通运行不需要IDE，也不需要调试器。
 
@@ -42,11 +42,9 @@ python scripts/build.py tests --bds "C:\Program Files (x86)\Embarcadero\Studio\3
 
 `scripts/prepare_dependencies.py`只准备忽略目录里的SDK副本；`scripts/build.py`通过同目录`build_ide.py`调用Delphi IDE。`app`打开根目录MED.groupproj，`tests`打开tests/Tests.groupproj，`all`依次构建并测试（默认）。日志在`build/logs/`。它们不是运行依赖，也不是Pascal替代编译器。
 
-`app`和`all`在产品构建成功后自动生成完整的`build/p3-med3/`，只包含`MED3.dll`、`P3MED.exe`和`MED.ini`，不含使用说明、MAP或DRC文件。配置基线随仓库提供，构建不读取外部游戏目录。原始编译输出保存在`build/compiled/p3-med3/`。
+`app`和`all`在产品构建成功后将`MED3.dll`、`P3MED.exe`放入`build/p3-med3/`，仅两个文件。原始编译输出保存在`build/compiled/p3-med3/`。
 
-打包阶段验证构建收据和配置SHA-256；缺文件或哈希不符会停止。成功构建后可用`python -B scripts/package_runtime.py`重新组装。输出存在清单外文件时停止，不自动删除；重复构建会覆盖清单内文件和基线配置，个人配置请保存在部署目录。
-
-打包测试：`python -B -m unittest discover -s tests/scripts -v`。
+复制前检查本次构建成功及两个产物的SHA-256，复制后核对结果。成功构建后可用`python -B scripts/package_runtime.py`重新组装。输出目录存在其他文件时停止，不自动删除；个人配置请保存在部署目录。
 
 当前ICO/RES构建资源已提供，不需要图标提取工具，也不依赖旧版EXE。
 

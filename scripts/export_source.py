@@ -7,8 +7,7 @@ def source_files():
     roots=["README.md","INSTALL.md","BUILDING.md","CHANGELOG.md","LICENSE",
            "LICENSE-STATUS.md","THIRD_PARTY_NOTICES.md",".gitignore",".gitattributes",
            "MED.groupproj","scripts/build.py","scripts/prepare_dependencies.py",
-           "scripts/build_ide.py","scripts/package_runtime.py","scripts/export_source.py","scripts/README.md",
-           "runtime/MED.ini","runtime/README.md"]
+           "scripts/build_ide.py","scripts/package_runtime.py","scripts/export_source.py","scripts/README.md"]
     files=[ROOT/p for p in roots]
     for directory,extensions in [
         ("src/med",{".pas",".dfm",".dpr",".dproj",".res",".ico"}),

@@ -7,7 +7,7 @@
 | `prepare_dependencies.py` | 可选的一次性SDK兼容副本准备；可用手工复制/修改代替 |
 | `build.py` | 可选构建/测试入口：`app`、`tests`、`all` |
 | `build_ide.py` | `build.py`内部调用的IDE驱动，使用`MED.groupproj`和`tests/Tests.groupproj` |
-| `package_runtime.py` | 校验构建收据并组装完整三文件运行目录`build/p3-med3/` |
+| `package_runtime.py` | 校验本次构建后，将P3MED.exe和MED3.dll复制到`build/p3-med3/` |
 | `export_source.py` | 按白名单导出干净源码，避免上传SDK和本机缓存 |
 
 已删除图标提取脚本；资源文件已在工程中，不需要从旧EXE提取。

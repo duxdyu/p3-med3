@@ -1,7 +1,7 @@
 """Portable Delphi CE IDE build. Single attempt, owned private desktop only."""
 from pathlib import Path
 import os,sys,runpy,argparse,subprocess,json,shutil
-from package_runtime import package, check_config
+from package_runtime import package
 ROOT=Path(__file__).resolve().parents[1]
 ap=argparse.ArgumentParser();ap.add_argument('target',choices=['app','tests','all'],nargs='?',default='all');ap.add_argument('--bds',default=os.environ.get('BDS'));ap.add_argument('--allow-existing-ide',action='store_true')
 a=ap.parse_args()
@@ -9,7 +9,6 @@ if not a.bds:ap.error('Set BDS or use --bds')
 os.environ['BDS']=a.bds
 os.environ['ALLOW_EXISTING_IDE']='1' if a.allow_existing_ide else '0'
 if not (ROOT/'src/sdk-overlay/Winapi.UIAutomation.pas').exists():raise SystemExit('Prepare SDK overlay manually or run scripts/prepare_dependencies.py first.')
-if a.target in {'app','all'}:check_config(ROOT)
 temp=ROOT/'build/temp';temp.mkdir(parents=True,exist_ok=True)
 os.environ['TEMP']=os.environ['TMP']=str(temp)
 driver=runpy.run_path(str(ROOT/'scripts/build_ide.py'))

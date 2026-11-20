@@ -37,7 +37,7 @@ p3-med3/
 - `.dproj.local/.groupproj.local`、IDE 缓存、`__history/`、`__recovery/`。
 - `.idea/`、`.xcodemap/`、`.vs/`。
 - `src/sdk-overlay/`、`src/vendor/` 等本机依赖副本。
-- 构建日志、`*-build-result.json`、个人 `MED.ini`。仓库提供的`runtime/MED.ini`配置基线为显式例外，随源码保存；组装脚本将其复制到`build/p3-med3/`。
+- 构建日志、`*-build-result.json`、个人 `MED.ini`。不提供预置INI，程序在配置缺失时使用默认值，保存设置时自动创建。
 
 本次整理保留了原有日志和本地配置；历史 `src/build-history/` 等仍由忽略规则排除。新构建输出继续写入 `build/`。
 

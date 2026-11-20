@@ -15,7 +15,7 @@ python scripts/export_source.py --output build/github-source
 - `build/github-source.zip`：同内容源码包；
 - `build/github-source.manifest.json`：逐文件SHA256。
 
-输出位置必须尚不存在。脚本不会执行`git init`、提交、推送或覆盖任何已有发布包；不包含SDK、编译产物、本机配置、个人MED.ini、游戏或存档。仅包含明确提供的配置基线`runtime/MED.ini`及其来源说明，支持新克隆和源码导出后的完整运行目录组装。
+输出位置必须尚不存在。脚本不会执行`git init`、提交、推送或覆盖任何已有发布包；不包含SDK、编译产物、本机配置、MED.ini、游戏或存档。MED.ini由程序保存设置时自动创建。
 
 若不使用Python，按以下文件范围复制：
 
@@ -23,7 +23,7 @@ python scripts/export_source.py --output build/github-source
 - `src/med/`的`.pas/.dfm/.dpr/.dproj/.res/.ico`；
 - `src/shared/`的`.pas`；
 - `tests/`的测试源码、工程、组工程、资源及Markdown说明；
-- `scripts/`中的四个可选辅助Python脚本；
+- `scripts/`中的构建、依赖准备、复制产物及源码导出脚本；
 - `docs/`、`dependencies/`。
 
 不要把整个本机目录压缩后直接上传：其中可能有被Git忽略的SDK副本及编译缓存。`.res/.ico`是构建输入，需保留；`.dcu/.dll/.exe`是生成产物，不属于源码仓库。
